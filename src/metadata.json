@@ -1,0 +1,5 @@
+{
+  "name": "Nubemox UI",
+  "description": "A modern, responsive frontend for the Nubemox Proxmox API, featuring resource management and creation wizards.",
+  "requestFramePermissions": []
+}
