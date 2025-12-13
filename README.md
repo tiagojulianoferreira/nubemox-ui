@@ -1,73 +1,135 @@
-# React + TypeScript + Vite
+# 🖥️ Nubemox UI (Frontend)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+> *Interface de Auto-Atendimento para Orquestração Proxmox*
 
-Currently, two official plugins are available:
+O **Nubemox UI** é a interface web moderna e responsiva do sistema Nubemox. Desenvolvida em **React (TypeScript)** com **Vite**, ela oferece uma experiência fluida para que usuários finais gerenciem suas próprias Máquinas Virtuais (VMs) e Containers (LXC), visualizem cotas e acessem o catálogo de serviços.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+-----
 
-## React Compiler
+## Funcionalidades
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+  * **Autenticação:** Login seguro e persistência de sessão via JWT.
+  * **Dashboard de Cotas:** Visualização em tempo real do consumo de CPU, RAM e Disco.
+  * **Catálogo de Serviços:** Listagem de templates disponíveis com especificações de hardware claras.
+  * **One-Click Deploy:** Provisionamento simplificado (apenas nome do host necessário).
+  * **Gestão de Recursos:**
+      * Ações de Energia (Ligar, Desligar, Reiniciar).
+      * Acesso ao Console (VNC/NoVNC).
+      * Escalonamento Vertical (Aumentar CPU/RAM).
+  * **Snapshots:** Criação e restauração de backups de estado instantâneos.
 
-## Expanding the ESLint configuration
+-----
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Tech Stack
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+  * **Core:** React 18, TypeScript
+  * **Build Tool:** Vite (Super rápido)
+  * **Estilização:** Tailwind CSS
+  * **Ícones:** Lucide React
+  * **Requisições:** Axios (com Interceptors para JWT)
+  * **Notificações:** React Hot Toast
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+-----
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Pré-requisitos
+
+  * **Node.js:** Versão 18 ou superior.
+  * **Nubemox Backend:** A API Flask deve estar rodando (padrão: `http://localhost:5000`).
+
+-----
+
+## Instalação e Execução
+
+### 1\. Clonar e Instalar Dependências
+
+```bash
+# Entre na pasta do frontend
+cd nubemox-ui
+
+# Instale as dependências do projeto
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 2\. Configurar Conexão com Backend
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Por padrão, o frontend espera que a API esteja em `http://localhost:5000/api`.
+Se precisar alterar (ex: para produção ou outro IP), edite o arquivo `src/services/api.ts`:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```typescript
+// src/services/api.ts
+const api = axios.create({
+  baseURL: 'http://localhost:5000/api', // <--- Ajuste aqui se necessário
+});
 ```
+
+### 3\. Rodar em Desenvolvimento
+
+Para iniciar o servidor local com *Hot Reload*:
+
+```bash
+npm run dev
+```
+
+O terminal exibirá o link de acesso, geralmente:
+
+> ➜  Local:   http://localhost:5173/
+
+-----
+
+## Estrutura do Projeto
+
+```text
+src/
+├── components/       # Componentes visuais (Dashboard, Modais, Cards)
+│   ├── DeployModal.tsx
+│   ├── Layout.tsx
+│   ├── ResourceList.tsx
+│   └── ...
+├── services/         # Comunicação com a API
+│   └── api.ts        # Configuração do Axios e Endpoints
+├── types/            # Definições de Tipos TypeScript (Interfaces)
+│   └── index.ts
+├── App.tsx           # Roteamento e Lógica Principal
+└── main.tsx          # Ponto de entrada React
+```
+
+-----
+
+## Telas Principais
+
+### 1\. Dashboard
+
+Visão geral dos recursos ativos e barras de progresso mostrando o consumo da cota do usuário.
+
+### 2\. Catálogo
+
+Grid de templates disponíveis. O usuário vê as especificações fixas (CPU/RAM) antes de criar.
+
+### 3\. Meus Serviços
+
+Lista tabular das VMs/Containers com botões rápidos para Start/Stop, Console e Snapshots.
+
+-----
+
+## Build para Produção
+
+Para gerar os arquivos estáticos otimizados (pasta `dist/`) para deploy em Nginx ou Apache:
+
+```bash
+npm run build
+```
+
+-----
+
+## Contribuição
+
+1.  Crie uma Branch (`git checkout -b feature/NovaUI`).
+2.  Commit suas mudanças (`git commit -m 'Add: Novo componente de gráfico'`).
+3.  Push para a Branch (`git push origin feature/NovaUI`).
+4.  Abra um Pull Request.
+
+-----
+
+## Licença
+
+Este projeto é parte da suíte Nubemox. Distribuído sob a licença AGPL3.
