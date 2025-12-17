@@ -1,126 +1,171 @@
 import React, { useState } from 'react';
+import { X, AlertCircle, HardDrive, Cpu, Server } from 'lucide-react';
 import { CatalogItem, UserProfile } from '../types';
-import { X, Server, Check } from 'lucide-react';
 
 interface DeployModalProps {
   item: CatalogItem;
-  user: UserProfile;
-  // pools removido pois o backend gerencia isso
+  user: UserProfile; // Usado para mostrar a cota na msg amarela se quiser
   onClose: () => void;
-  onConfirm: (payload: { template_id: number; name: string }, type: 'lxc' | 'qemu') => void;
+  onConfirm: (payload: any) => Promise<void>;
 }
 
-const DeployModal: React.FC<DeployModalProps> = ({ item, user, onClose, onConfirm }) => {
+export default function DeployModal({ item, user, onClose, onConfirm }: DeployModalProps) {
   const [hostname, setHostname] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  const handleSubmit = () => {
-    if (!hostname) return;
-    setIsSubmitting(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConfirm = async () => {
+    // Validação simples do hostname
+    if (!hostname || hostname.length < 3) {
+      setError("O Hostname deve ter pelo menos 3 caracteres.");
+      return;
+    }
     
-    // Payload alinhado com o Backend Python (routes.py)
-    const payload = {
-        template_id: item.id, // ID real do banco (PK)
+    // Regex simples para hostname (letras, numeros, hifens)
+    const validHostname = /^[a-z0-9-]+$/.test(hostname);
+    if (!validHostname) {
+      setError("Use apenas letras minúsculas, números e hífens.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // O Payload envia as specs fixas do item, já que o usuário não pode editar
+      const payload = {
+        template_id: item.id,
         name: hostname,
-    };
-    
-    // O tipo vem do item (lxc ou qemu) para ajudar o frontend a categorizar depois se quiser
-    onConfirm(payload, item.type);
+        cpu: item.specs.cpu,       // Envia o valor fixo do template
+        memory: item.specs.memory, // Envia o valor fixo do template
+        // storage: item.specs.storage // O backend geralmente pega do template se não enviar
+      };
+
+      await onConfirm(payload);
+      // Se sucesso, o pai (App.tsx) fecha o modal.
+
+    } catch (err: any) {
+      const msg = err.response?.data?.error || "Falha ao solicitar criação.";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="bg-slate-900 p-6 text-white flex justify-between items-start">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        
+        {/* CABEÇALHO */}
+        <div className="bg-slate-900 px-6 py-4 flex justify-between items-center text-white">
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Server className="w-5 h-5 text-blue-400" />
-              Novo Recurso
-            </h2>
-            <p className="text-slate-400 text-sm mt-1">Configurar nova instância</p>
+            <div className="flex items-center gap-2">
+                <Server size={18} className="text-blue-400"/>
+                <h2 className="text-lg font-bold">Novo Recurso</h2>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">Configurar nova instância</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-            <X size={24} />
+            <X size={20} />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-6 overflow-y-auto">
-            {/* Resumo do Template Selecionado */}
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
-                <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">Template Base</span>
-                    <span className="bg-white text-blue-800 text-xs px-2 py-0.5 rounded border border-blue-200 font-mono">
-                        {item.type.toUpperCase()}
-                    </span>
-                </div>
-                <h3 className="text-lg font-bold text-blue-900">{item.name}</h3>
-                
-                <div className="flex gap-4 mt-3 text-sm text-blue-800">
-                    <span title="Processador">🧠 <b>{item.specs.cpu}</b> vCore</span>
-                    <span title="Memória RAM">💾 <b>{item.specs.memory}</b> MB</span>
-                    <span title="Armazenamento">💿 <b>{item.specs.storage}</b> GB</span>
-                </div>
+        <div className="p-6 space-y-5">
+          
+          {/* BANNER DE ERRO (Só aparece se o Backend rejeitar) */}
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3 text-red-700 text-sm animate-in slide-in-from-top-2">
+              <AlertCircle size={18} className="shrink-0 mt-0.5 text-red-600" />
+              <div>
+                <span className="font-bold block mb-0.5">Erro na Criação</span>
+                <span>{error}</span>
+              </div>
             </div>
+          )}
 
-            {/* Input de Nome */}
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nome do Host (Hostname)
-                </label>
-                <div className="relative">
-                    <input 
-                        type="text" 
-                        value={hostname}
-                        onChange={(e) => {
-                            // Sanitização simples no frontend: lowercase e sem espaços
-                            const clean = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
-                            setHostname(clean);
-                        }}
-                        placeholder="ex: meu-servidor-web"
-                        className="w-full pl-4 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                        autoFocus
-                    />
+          {/* CARD DO TEMPLATE (VISUALIZAÇÃO APENAS) */}
+          <div className="border border-blue-100 bg-blue-50/50 rounded-lg p-4">
+            <div className="flex justify-between items-start mb-2">
+                <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">Template Base</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 bg-white border border-blue-200 text-blue-600 rounded">
+                    {item.type.toUpperCase()}
+                </span>
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 mb-3">{item.name}</h3>
+            
+            <div className="flex gap-4 text-sm text-slate-600">
+                <div className="flex items-center gap-1.5" title="CPU Cores">
+                    <span className="text-red-400">🧠</span> 
+                    <span className="font-medium text-slate-900">{item.specs.cpu}</span> vCore
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                    Apenas letras minúsculas (a-z), números (0-9) e hífens (-).
-                </p>
+                <div className="flex items-center gap-1.5" title="Memória RAM">
+                    <span className="text-blue-400">💾</span> 
+                    <span className="font-medium text-slate-900">{item.specs.memory}</span> MB
+                </div>
+                <div className="flex items-center gap-1.5" title="Disco">
+                    <span className="text-emerald-400">💿</span> 
+                    <span className="font-medium text-slate-900">{item.specs.storage}</span> GB
+                </div>
             </div>
+          </div>
 
-            <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-lg text-xs text-yellow-800">
-                <p>
-                    <strong>Nota:</strong> A máquina será criada no seu pool pessoal. 
-                    Se você exceder a cota de <strong>{user.quota.limit.cpu} vCores</strong> ou <strong>{user.quota.limit.memory} MB</strong>, a criação será bloqueada.
-                </p>
-            </div>
+          {/* INPUT HOSTNAME */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+              Nome do Host (Hostname)
+            </label>
+            <input 
+              autoFocus
+              type="text" 
+              className={`w-full p-3 border rounded-lg outline-none transition-all ${
+                  error ? 'border-red-300 focus:ring-2 focus:ring-red-100' : 'border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+              }`}
+              placeholder="ex: meu-servidor-web"
+              value={hostname}
+              onChange={(e) => setHostname(e.target.value.toLowerCase())}
+            />
+            <p className="text-xs text-slate-400 mt-1.5">
+              Apenas letras minúsculas (a-z), números (0-9) e hífens (-).
+            </p>
+          </div>
+
+          {/* NOTA AMARELA (INFORMATIVA) */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 leading-relaxed">
+            <strong>Nota:</strong> A máquina será criada no seu pool pessoal. 
+            Se você exceder sua cota, a criação será bloqueada pelo sistema.
+          </div>
+
         </div>
 
-        {/* Footer */}
-        <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end space-x-3 shrink-0">
-            <button 
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-                Cancelar
-            </button>
-            <button 
-                onClick={handleSubmit}
-                disabled={!hostname || isSubmitting}
-                className="px-6 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            >
-                {isSubmitting ? (
-                    <>Processando...</>
-                ) : (
-                    <>
-                        <Check size={16} /> Confirmar
-                    </>
-                )}
-            </button>
+        {/* RODAPÉ */}
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+          <button 
+            onClick={onClose}
+            disabled={loading}
+            className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg font-medium transition-colors text-sm"
+          >
+            Cancelar
+          </button>
+          
+          <button
+            onClick={handleConfirm}
+            disabled={loading}
+            className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium shadow-sm transition-all flex items-center gap-2 text-sm disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
+                Processando...
+              </>
+            ) : (
+              <>
+               <span className="text-white">✓</span> Confirmar
+              </>
+            )}
+          </button>
         </div>
+
       </div>
     </div>
   );
-};
-
-export default DeployModal;
+}

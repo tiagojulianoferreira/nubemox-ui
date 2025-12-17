@@ -1,41 +1,61 @@
 import React, { useState, useEffect } from 'react';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast'; // [Alterado]: Importar 'toast' aqui
+
+// --- IMPORTS DOS COMPONENTES VISUAIS ---
 import Login from './components/Login';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import ResourceList from './components/ResourceList';
 import ServiceCatalog from './components/ServiceCatalog';
+
+// --- IMPORTS DAS PÁGINAS ADMINISTRATIVAS (Padronizado em ./pages) ---
+import AdminTemplates from './pages/AdminTemplates'; 
+import AdminUsers from './pages/AdminUsers'; 
+
+// --- MODAIS ---
 import DeployModal from './components/DeployModal';
 import ScaleModal from './components/ScaleModal';
 import SnapshotModal from './components/SnapshotModal';
 
-// IMPORTANTE: Usamos os novos serviços aqui
-import { authService, resourceService } from './services/api';
+import api, { authService, resourceService } from './services/api';
 import { UserProfile, ViewState, ServiceItem, CatalogItem } from './types';
+
+export interface SystemHealth {
+    status: 'healthy' | 'unhealthy';
+    error?: string;
+    details?: {
+        version: string;
+        release: string;
+        repoid: string;
+    };
+}
 
 function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
+  
+  // Inicializa a view. Se for admin, pode começar em qualquer uma, mas DASHBOARD é o padrão seguro.
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
   const [loading, setLoading] = useState(true);
 
   // Estados de Dados
   const [resources, setResources] = useState<ServiceItem[]>([]);
   const [loadingResources, setLoadingResources] = useState(false);
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | undefined>(undefined);
 
   // Estados de Modais
   const [selectedCatalogItem, setSelectedCatalogItem] = useState<CatalogItem | null>(null);
   const [scaleItem, setScaleItem] = useState<ServiceItem | null>(null);
   const [snapshotItem, setSnapshotItem] = useState<ServiceItem | null>(null);
 
-  // 1. Verificar Sessão ao Carregar
   useEffect(() => {
     checkSession();
   }, []);
 
-  // 2. Carregar Recursos quando mudar para telas que precisam deles
   useEffect(() => {
+    // Só busca recursos se estiver nas telas de usuário comum
     if (user && (currentView === ViewState.DASHBOARD || currentView === ViewState.SERVICES)) {
       fetchResources();
+      fetchSystemHealth();
     }
   }, [user, currentView]);
 
@@ -57,13 +77,22 @@ function App() {
   const fetchResources = async () => {
     setLoadingResources(true);
     try {
-      // CORREÇÃO: Usar resourceService.list() em vez de proxmoxApi.getResources()
       const data = await resourceService.list();
       setResources(data);
     } catch (error) {
       console.error("Erro ao listar recursos", error);
     } finally {
       setLoadingResources(false);
+    }
+  };
+
+  const fetchSystemHealth = async () => {
+    try {
+      const response = await api.get('/health');
+      setSystemHealth(response.data);
+    } catch (error) {
+      console.error("Erro no Health Check", error);
+      setSystemHealth({ status: 'unhealthy', error: 'Conexão Perdida' });
     }
   };
 
@@ -89,12 +118,19 @@ function App() {
     <>
       <Toaster position="top-right" />
       
-      <Layout currentView={currentView} setView={setCurrentView} username={user.username}>
+      <Layout 
+        currentView={currentView} 
+        setView={setCurrentView} 
+        username={user.username}
+        isAdmin={user.is_admin}
+      >
         
+        {/* --- TELAS DE USUÁRIO --- */}
         {currentView === ViewState.DASHBOARD && (
           <Dashboard 
             resources={resources} 
             userProfile={user} 
+            systemHealth={systemHealth} 
             loading={loadingResources} 
           />
         )}
@@ -112,6 +148,16 @@ function App() {
           <ServiceCatalog onSelect={setSelectedCatalogItem} />
         )}
 
+        {/* --- TELAS ADMINISTRATIVAS --- */}
+        
+        {currentView === ViewState.ADMIN_TEMPLATES && (
+           <AdminTemplates />
+        )}
+
+        {currentView === ViewState.ADMIN_USERS && (
+           <AdminUsers />
+        )}
+
       </Layout>
 
       {/* --- MODAIS GLOBAIS --- */}
@@ -121,13 +167,30 @@ function App() {
           item={selectedCatalogItem}
           user={user}
           onClose={() => setSelectedCatalogItem(null)}
-          onConfirm={async () => {
-            // O modal já faz o POST para a API internamente.
-            // Aqui só precisamos atualizar a interface.
-            await fetchResources();
-            await checkSession(); // Atualiza a barra de cota
-            setSelectedCatalogItem(null);
-            setCurrentView(ViewState.SERVICES); // Leva o usuário para ver a criação
+          onConfirm={async (payload) => {
+            try {
+                // Tenta realizar o deploy
+                await api.post('/provisioning/deploy', payload);
+                
+                // Sucesso: Notifica e atualiza a lista
+                toast.success("Deploy iniciado com sucesso!"); 
+                await fetchResources();
+                await checkSession(); 
+                setSelectedCatalogItem(null);
+                setCurrentView(ViewState.SERVICES);
+
+            } catch (error: any) {
+                console.error("Erro no Deploy:", error);
+                
+                // 1. Extrai a mensagem de erro do backend (ex: "Cota de CPU excedida")
+                const errorMessage = error.response?.data?.error || "Falha ao processar solicitação.";
+                
+                // 2. Notifica o usuário
+                toast.error(errorMessage);
+
+                // 3. Relança o erro para que o DeployModal pare o loading
+                throw error;
+            }
           }}
         />
       )}
@@ -152,5 +215,12 @@ function App() {
     </>
   );
 }
+
+// No App.tsx, dentro do componente principal
+console.log('App Debug - ViewState:', {
+  DASHBOARD: ViewState.DASHBOARD,
+  ADMIN_USERS: ViewState.ADMIN_USERS,
+  ADMIN_TEMPLATES: ViewState.ADMIN_TEMPLATES,
+});
 
 export default App;
