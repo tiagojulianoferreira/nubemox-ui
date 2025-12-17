@@ -14,7 +14,8 @@ import {
     DownloadCloud,
     CheckSquare,
     Square,
-    AlertTriangle
+    AlertTriangle,
+    Trash2
 } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
@@ -24,6 +25,7 @@ interface Template {
     id: number;
     name: string;
     type: 'lxc' | 'qemu';
+    deploy_mode: 'clone' | 'file' | 'create';
     proxmox_template_volid: string;
     category: string;
     is_active: boolean;
@@ -50,7 +52,7 @@ const AdminTemplates: React.FC = () => {
     const [scanning, setScanning] = useState(false);
     const [importing, setImporting] = useState(false);
     const [scannedCandidates, setScannedCandidates] = useState<CandidateTemplate[]>([]);
-    const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]); // Lista de volids selecionados
+    const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]); 
 
     // --- ESTADOS DE EDIÇÃO ---
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -61,7 +63,6 @@ const AdminTemplates: React.FC = () => {
         setLoading(true);
         try {
             const res = await api.get('/admin/templates');
-            // Ordena: Ativos primeiro
             const sorted = res.data.sort((a: Template, b: Template) => Number(b.is_active) - Number(a.is_active));
             setTemplates(sorted);
         } catch (error) {
@@ -71,7 +72,7 @@ const AdminTemplates: React.FC = () => {
         }
     };
 
-    // 2. Scan: Apenas lê o Proxmox (não grava)
+    // 2. Scan: Apenas lê o Proxmox
     const handleScan = async () => {
         setScanning(true);
         setIsScanModalOpen(true);
@@ -93,14 +94,11 @@ const AdminTemplates: React.FC = () => {
         if (selectedCandidates.length === 0) return;
         setImporting(true);
         try {
-            // Filtra os objetos completos para enviar ao backend
             const itemsToImport = scannedCandidates.filter(c => selectedCandidates.includes(c.volid));
-            
             await api.post('/admin/templates/import', { templates: itemsToImport });
             toast.success(`${itemsToImport.length} templates importados!`);
-            
             setIsScanModalOpen(false);
-            fetchTemplates(); // Atualiza a lista principal
+            fetchTemplates();
         } catch (error) {
             toast.error("Erro na importação.");
         } finally {
@@ -113,7 +111,6 @@ const AdminTemplates: React.FC = () => {
         try {
             const res = await api.put(`/admin/templates/${id}/toggle`);
             toast.success(res.data.message);
-            // Atualiza localmente para feedback instantâneo
             setTemplates(prev => prev.map(t => t.id === id ? { ...t, is_active: res.data.is_active } : t));
         } catch (error) {
             toast.error("Erro ao alterar status.");
@@ -133,7 +130,24 @@ const AdminTemplates: React.FC = () => {
         }
     };
 
-    // Auxiliar para Checkbox
+    // 6. Deletar Template (CORRIGIDO PARA USAR /admin)
+    const handleDelete = async (id: number) => {
+        const confirmMsg = "Deseja remover este template do catálogo?\n\nO recurso original no Proxmox NÃO será apagado, permitindo que você o escaneie e importe novamente no futuro.";
+        
+        if (!window.confirm(confirmMsg)) return;
+
+        try {
+            // [FIX] Rota ajustada para /admin/templates
+            await api.delete(`/admin/templates/${id}`); 
+            
+            setTemplates(prev => prev.filter(t => t.id !== id));
+            toast.success("Template removido do catálogo.");
+        } catch (error: any) {
+            const msg = error.response?.data?.error || "Erro ao remover template.";
+            toast.error(msg);
+        }
+    };
+
     const toggleCandidateSelection = (volid: string) => {
         if (selectedCandidates.includes(volid)) {
             setSelectedCandidates(prev => prev.filter(id => id !== volid));
@@ -185,8 +199,8 @@ const AdminTemplates: React.FC = () => {
                                 : 'bg-slate-50 border-slate-200 opacity-75 grayscale-[0.5] hover:opacity-100 hover:grayscale-0'
                             }`}
                         >
-                            {/* Toggle Visibilidade */}
-                            <div className="absolute top-4 right-4 z-10">
+                            {/* AÇÕES NO CARD */}
+                            <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
                                 <button
                                     onClick={(e) => { e.stopPropagation(); handleToggleActive(tmpl.id); }}
                                     className={`p-1.5 rounded-full transition-colors ${
@@ -194,13 +208,21 @@ const AdminTemplates: React.FC = () => {
                                         ? 'bg-green-100 text-green-600 hover:bg-green-200' 
                                         : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
                                     }`}
-                                    title={tmpl.is_active ? "Ativo (Visível no Catálogo)" : "Inativo (Oculto)"}
+                                    title={tmpl.is_active ? "Ativo" : "Inativo"}
                                 >
                                     {tmpl.is_active ? <Eye size={18} /> : <EyeOff size={18} />}
                                 </button>
+                                
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(tmpl.id); }}
+                                    className="p-1.5 rounded-full bg-white text-slate-400 hover:text-red-500 hover:bg-red-50 border border-slate-200 transition-colors shadow-sm"
+                                    title="Remover"
+                                >
+                                    <Trash2 size={18} />
+                                </button>
                             </div>
 
-                            <div className="flex justify-between items-start mb-4 pr-10">
+                            <div className="flex justify-between items-start mb-4 pr-20">
                                 <div className={`p-3 rounded-lg ${tmpl.type === 'lxc' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
                                     {tmpl.type === 'lxc' ? <Box size={24} /> : <Server size={24} />}
                                 </div>
@@ -247,7 +269,7 @@ const AdminTemplates: React.FC = () => {
                 </div>
             )}
 
-            {/* --- MODAL 1: SCAN & IMPORT (NOVO) --- */}
+            {/* --- MODAL 1: SCAN & IMPORT --- */}
             {isScanModalOpen && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh] animate-in zoom-in-95">
@@ -330,7 +352,7 @@ const AdminTemplates: React.FC = () => {
                 </div>
             )}
 
-            {/* --- MODAL 2: EDIÇÃO (COM PROTEÇÃO DE DISCO) --- */}
+            {/* --- MODAL 2: EDIÇÃO --- */}
             {isEditModalOpen && editingTemplate && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6 animate-in zoom-in-95">
@@ -347,47 +369,50 @@ const AdminTemplates: React.FC = () => {
                                 />
                             </div>
 
-                            <div className="grid grid-cols-3 gap-3">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">CPU (Cores)</label>
-                                    <input type="number" min="1" className="w-full p-2 border border-slate-300 rounded-lg text-center font-mono"
-                                        value={editingTemplate.default_cpu}
-                                        onChange={e => setEditingTemplate({...editingTemplate, default_cpu: Number(e.target.value)})}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">RAM (MB)</label>
-                                    <input type="number" step="128" min="128" className="w-full p-2 border border-slate-300 rounded-lg text-center font-mono"
-                                        value={editingTemplate.default_memory}
-                                        onChange={e => setEditingTemplate({...editingTemplate, default_memory: Number(e.target.value)})}
-                                    />
-                                </div>
+                            {/* Detecção de Clone para Bloqueio de Inputs */}
+                            {(() => {
+                                const isClone = 
+                                    editingTemplate.deploy_mode === 'clone' || 
+                                    /^\d+$/.test(String(editingTemplate.proxmox_template_volid));
                                 
-                                {/* --- PROTEÇÃO DE DISCO --- */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">HD (GB)</label>
-                                    <div className="relative">
-                                        <input type="number" 
-                                            // Trava visualmente o mínimo para ser o valor atual (ou o original do sync)
-                                            min={editingTemplate.default_storage}
-                                            className="w-full p-2 border border-slate-300 rounded-lg text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
-                                            value={editingTemplate.default_storage}
-                                            onChange={e => {
-                                                const val = Number(e.target.value);
-                                                // Impede setar valor menor via digitação
-                                                if (val >= editingTemplate.default_storage) {
-                                                    setEditingTemplate({...editingTemplate, default_storage: val});
-                                                }
-                                            }}
-                                        />
-                                        {/* Ícone de alerta discreto */}
-                                        <div className="absolute -top-1 -right-1 text-orange-400" title="Não é possível diminuir o tamanho original do template">
-                                            <AlertTriangle size={10} fill="currentColor" />
+                                const inputClass = isClone 
+                                    ? "w-full p-2 border border-slate-200 rounded-lg text-center font-mono bg-slate-100 text-slate-400 cursor-not-allowed"
+                                    : "w-full p-2 border border-slate-300 rounded-lg text-center font-mono focus:ring-2 focus:ring-indigo-500 outline-none";
+
+                                return (
+                                    <>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">CPU</label>
+                                                <input type="number" min="1" disabled={isClone} className={inputClass}
+                                                    value={editingTemplate.default_cpu}
+                                                    onChange={e => setEditingTemplate({...editingTemplate, default_cpu: Number(e.target.value)})}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">RAM</label>
+                                                <input type="number" step="128" min="128" disabled={isClone} className={inputClass}
+                                                    value={editingTemplate.default_memory}
+                                                    onChange={e => setEditingTemplate({...editingTemplate, default_memory: Number(e.target.value)})}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">HD</label>
+                                                <input type="number" disabled={isClone} className={inputClass}
+                                                    value={editingTemplate.default_storage}
+                                                    onChange={e => setEditingTemplate({...editingTemplate, default_storage: Number(e.target.value)})}
+                                                />
+                                            </div>
                                         </div>
-                                    </div>
-                                    <p className="text-[9px] text-slate-400 mt-1 text-center leading-tight">Mínimo obrigatório</p>
-                                </div>
-                            </div>
+                                        {isClone && (
+                                            <p className="text-[10px] text-amber-600 bg-amber-50 p-2 rounded border border-amber-100 flex items-center gap-1">
+                                                <AlertTriangle size={12}/>
+                                                Hardware gerido pelo Proxmox (Modo Clone).
+                                            </p>
+                                        )}
+                                    </>
+                                );
+                            })()}
                             
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Categoria</label>
